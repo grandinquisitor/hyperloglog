@@ -2,7 +2,6 @@
 This module implements probabilistic data structure which is able to calculate the cardinality of large multisets in a single pass using little auxiliary memory
 """
 
-from cStringIO import StringIO
 from hashlib import sha1
 import math
 import struct
@@ -61,9 +60,6 @@ class HyperLogLog(object):
     if value is None:
       return
 
-    if not isinstance(value, basestring):
-      value = str(hash(value)) * 10
-
     self.addhash(self.get_hash(value))
 
   def addhash(self, hsh):
@@ -117,7 +113,7 @@ class HyperLogLog(object):
           self.addhash(item)
 
       elif other.mode == ARRMODE:
-        if self.m != item.m:
+        if self.m != other.m:
           raise ValueError('Counters precisions should be equal')
 
         elif self.mode != ARRMODE:
@@ -150,10 +146,19 @@ class HyperLogLog(object):
     return not self.__eq__(other)
 
   def __add__(self, other):
-    newone = self.__class__()
-    newone.update(self, others)
+    newone = self.emptycopy()
+    newone.update(self, other)
+    return newone
+
+  def __or__(self, other):
+    newone = self.emptycopy()
+    newone.update(self, other)
+    return newone
 
   def __iadd__(self, other):
+    self.update(self, other)
+
+  def __ior__(self, other):
     self.update(self, other)
 
   def __empty__(self):
@@ -170,6 +175,22 @@ class HyperLogLog(object):
 
   def __lt__(self, other):
     return self.card() < other.card()
+
+  def __contains__(self, value):
+    """Return true if value might be in set.
+
+    Exactly like a bloom filter, false positives are possible but false negatives are not.
+    """
+
+    if self.added_count == 0:
+      return False
+
+    hsh = self.get_hash(value)
+    if self.mode == EXACT:
+      return hsh in self.exact_set
+
+    j, w = self.munge_hash(hsh)
+    return self.M[j] and self.M[j] <= w
 
   def _Ep(self):
     estimate = self.alpha * self.m ** 2 / (2 ** -self.M).sum()
@@ -200,11 +221,14 @@ class HyperLogLog(object):
     else:
       return self._Ep()
 
+  def emptycopy(self):
+    return self.__class__(self.error_rate)
+
   def copy(self):
-    cpy = self.__class__(self.error_rate)
+    cpy = self.emptycopy()
     for k in self.__slots__:
       if k not in self._magic_slots:
-        setattr(cpy, getattr(self, k))
+        setattr(cpy, k, getattr(self, k))
 
     if self.mode == EXACT:
       cpy.exact_set = self.exact_set.copy()
