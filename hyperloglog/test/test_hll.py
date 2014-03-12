@@ -1,20 +1,25 @@
 #!/usr/bin/env python
 
+import unittest
 from unittest import TestCase
-from hll import HyperLogLog, get_alpha, get_rho
-from const import biasData, tresholdData, rawEstimateData
 import math
 import os
 import pickle
 
+import numpy
+
+from hll import HyperLogLog
+from const import biasData, thresholdData, rawEstimateData
+
+get_alpha, get_rho = HyperLogLog._get_alpha, HyperLogLog._get_rho
 
 class HyperLogLogTestCase(TestCase):
     def test_blobs(self):
-        self.assertEqual(len(tresholdData), 18 - 3)
+        self.assertEqual(len(thresholdData), 18 - 3)
 
     def test_alpha(self):
         alpha = [get_alpha(b) for b in range(4, 10)]
-        self.assertEqual(alpha, [0.673, 0.697, 0.709, 0.7152704932638152, 0.7182725932495458, 0.7197831133217303])
+        numpy.testing.assert_array_almost_equal(alpha, [0.673, 0.697, 0.709, 0.7152704932638152, 0.7182725932495458, 0.7197831133217303])
 
     def test_alpha_bad(self):
         self.assertRaises(ValueError, get_alpha, 1)
@@ -34,6 +39,7 @@ class HyperLogLogTestCase(TestCase):
 
     def test_init(self):
         s = HyperLogLog(0.05)
+        s.upgrade()
         self.assertEqual(s.p, 9)
         self.assertEqual(s.alpha, 0.7197831133217303)
         self.assertEqual(s.m, 512)
@@ -45,9 +51,12 @@ class HyperLogLogTestCase(TestCase):
         for i in range(10):
             s.add(str(i))
 
+        s.upgrade()
+
         M = [(i, v) for i, v in enumerate(s.M) if v > 0]
 
-        self.assertEqual(M, [(1, 1), (41, 1), (44, 1), (76, 3), (103, 4), (182, 1), (442, 2), (464, 5), (497, 1), (506, 1)])
+        numpy.testing.assert_array_equal(
+            M, [(1, 1), (41, 1), (44, 1), (76, 3), (103, 4), (182, 1), (442, 2), (464, 5), (497, 1), (506, 1)])
 
     def test_calc_cardinality(self):
         clist = [1, 5, 10, 30, 60, 200, 1000, 10000, 60000]
@@ -65,8 +74,8 @@ class HyperLogLogTestCase(TestCase):
                 s += a.card()
 
             z = (float(s) / n - card) / (rel_err * card / math.sqrt(n))
-            self.assertLess(-1.96, z)
-            self.assertGreater(1.96, z)
+            self.assertTrue(-1.96 < z)
+            self.assertTrue(1.96 > z)
 
 
     def test_update(self):
@@ -88,19 +97,17 @@ class HyperLogLogTestCase(TestCase):
         self.assertNotEqual(b, c)
         self.assertEqual(a, c)
 
-
-    def test_update_err(self):
-        a = HyperLogLog(0.05)
-        b = HyperLogLog(0.01)
-
-        self.assertRaises(ValueError, a.update, b)
-
     def test_pickle(self):
         a = HyperLogLog(0.05)
         for x in range(100):
             a.add(str(x))
+        a.upgrade()
         b = pickle.loads(pickle.dumps(a))
-        self.assertEqual(a.M, b.M)
+        numpy.testing.assert_array_equal(a.M, b.M)
         self.assertEqual(a.alpha, b.alpha)
         self.assertEqual(a.p, b.p)
         self.assertEqual(a.m, b.m)
+        self.assertEqual(len(a), len(b))
+
+if __name__ == '__main__':
+    unittest.main()
